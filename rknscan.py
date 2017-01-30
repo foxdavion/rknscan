@@ -12,17 +12,25 @@ import requests
 import string
 import time
 import os
+import subprocess
 import dns.resolver
 import dns.exception
 import colorama
+import datetime
+
 from termcolor import colored
 from queue import Queue, Empty
 from requests.exceptions import ConnectionError
+
+global name_dir
+#global not_block
+#not_block=[]
 
 colorama.init()
 parser = OptionParser()
 parser.add_option("-r", "--regexp", dest="regexp", help="Установить регулярное выражение, по которому будет матчиться вывод открываемой страницы (тут необходимо указать какой-либо кусок со страницы заглушки)")
 parser.add_option("-v", "--verbose", dest="verbose", help="Увеличить вербозность (для дебага)", action="store_true")
+parser.add_option("-p", "--printscreen", dest="printscreen", help="Делать скриншоты, если установлен phantomjs", action="store_true")
 parser.add_option("-n", "--numthreads", dest="n_threads", help="Установить количество потоков (defaul=500)")
 parser.add_option("-t", "--timeout", dest="timeout", help="Таймаут по истечению которого неответивший сайт считается недоступным (default=3)")
 parser.add_option("-f", "--file", dest="file", help="Указать файл с перечнем URL для проверки (НЕ в случае реестра Роскомнадзора)")
@@ -34,6 +42,7 @@ parser.add_option("-c", "--console", dest="console", help="Запуск в ко�
 
 
 regexp = "logo_eco.png" if not options.regexp else options.regexp
+printscreen = 0 if not options.printscreen else int(options.printscreen)
 timeout = 3 if not options.timeout else int(options.timeout)
 n_threads = 500 if not options.n_threads else int(options.n_threads)
 verbose = 0 if not options.verbose else int(options.verbose)
@@ -41,7 +50,11 @@ f = '' if not options.file else options.file
 substitute = options.substitute
 
 if options.timeout:options.timeout=float(options.timeout)
-
+now_time = datetime.datetime.now()
+time_dir = now_time.strftime("%d_%m_%Y_%H_%M")
+name_dir = '/opt/rkn/revizor_' + time_dir
+file_not_block = 'not_block_' + time_dir
+os.mkdir(name_dir)
 
 def query_yes_no(question, default="yes"):
     valid = {"yes": True, "y": True, "ye": True,
@@ -91,7 +104,7 @@ dpi_list =   {'rutracker.org':
                  'lookfor': 'Gelbooru- Image View', 'ip': '5.178.68.100'},
              }
              
-google_dns = '8.8.4.4'
+google_dns = '8.8.8.8'
 
 urlregex = re.compile(
                 r'^((?:http|https|newcamd525|mgcamd525)://)?' # http:// or https://
@@ -300,12 +313,13 @@ def test_dns():
 
 
 class WorkerThread(Thread):
-  def __init__(self,url_list,url_list_lock,regexp,timeout,verbose):
+  def __init__(self,url_list,url_list_lock,regexp,timeout,verbose,printscreen):
     super(WorkerThread,self).__init__()
     self.kill_received=False
     self.url_list=url_list
     self.url_list_lock=url_list_lock
     self.regexp=regexp
+    self.printscreen=printscreen
     self.timeout=timeout
     self.verbose=verbose
   
@@ -348,13 +362,21 @@ class WorkerThread(Thread):
         try:
             if os.path.isfile('cacert.pem'):
                 page = requests.get(nexturl,timeout=self.timeout,verify='cacert.pem').text
+                page1 = requests.get(nexturl,timeout=self.timeout,verify='cacert.pem').url
             else:
                 page = requests.get(nexturl,timeout=self.timeout).text
+                page1 = requests.get(nexturl,timeout=self.timeout).url
         except Exception as e:
             return
         if not re.findall(r'%s'%self.regexp,page):
             opend.append(nexturl)
-            print(" [f] Открылся: "+nexturl)
+            #not_block.append(nexturl)
+            print(" [f] Открылся: "+nexturl + " перенаправление на " +  page1)
+            if self.printscreen:
+                now_time = datetime.datetime.now()
+                time_file = now_time.strftime("%d_%m_%Y_%H_%M")
+                commands = 'phantomjs /opt/assets/rasterize.js "' + page1 + '" ' + name_dir + '/' + domain + '_'+ time_file + '.jpg 1024px'
+                subprocess.Popen(commands,shell=True,stdout=open('/dev/null','w'))
     elif nextproto in ['newcamd525','mgcamd525']:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         if not sock.connect_ex((domain, int(port))):opend.append(nextproto+"://"+nexturl)
@@ -380,7 +402,7 @@ def getdomain(url, proto):
 
 test_dns()
 test_dpi()
-input("Нажмите Enter чтобы продолжить...")
+#input("Нажмите Enter чтобы продолжить...")
 
 if f=='':
     if not os.path.isfile('dump.xml'):
@@ -459,7 +481,7 @@ if total==0:
 url_list_lock = Lock()
 workerthreadlist=[]
 for x in range(0,n_threads-1):
-    newthread = WorkerThread(url_list,url_list_lock,regexp,timeout,verbose)
+    newthread = WorkerThread(url_list,url_list_lock,regexp,timeout,verbose,printscreen)
     workerthreadlist.append(newthread)
     newthread.start()
 
@@ -480,3 +502,7 @@ if perc:
     for url in opend:
         print(colored("\t[f] "+url,'red'))
     input("Нажмите Enter чтобы выйти...")
+
+y = open(file_not_block, 'w')
+for x in opend: y.write(x)
+y.close()
