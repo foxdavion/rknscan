@@ -4,6 +4,7 @@ Scanner for testing DPI + ability to scan Roskomnadzor registry and custom lists
 - Добавление функции проверки доступности сайта по всем отрезолвиным IP.
 - Добавление функции проверки доступности сайта по записям IP из реестра(принцип работы ревизора с последними изменениями).
 - Автоматическое оповещение на почту с результатами сканирования.
+
 ##Установка в Ubuntu(debian)
 apt-get install python3
 apt-get install python3-pip
